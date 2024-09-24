@@ -88,15 +88,23 @@ Zotero.Connector_Browser = new function() {
 	}
 
 	/**
-	 * Returns a mutable tabInfo object for a given tab
+	 * Resets and returns a mutable tabInfo object for a given tab
 	 * @param tabId
-	 * @param reset {Boolean}
 	 * @returns {Object}
 	 */
-	this.getTabInfo = function(tabId, reset=false) {
-		if (_tabInfo[tabId] && !reset) return _tabInfo[tabId];
+	 this.resetTabInfo = function (tabId) {
 		_tabInfo[tabId] = this._getNewTabInfo();
 		return _tabInfo[tabId];
+	}
+
+	/**
+	 * Returns a mutable tabInfo object for a given tab
+	 * @param tabId
+	 * @returns {Object}
+	 */
+	this.getTabInfo = function(tabId) {
+		if (_tabInfo[tabId]) return _tabInfo[tabId];
+		return this.resetTabInfo(tabId);
 	}
 
 	this.executeScript = function(tabId, details) {
@@ -924,6 +932,7 @@ Zotero.Connector_Browser = new function() {
 	
 	function _updateInfoForTab(tabId, url) {
 		let tabInfo = Zotero.Connector_Browser.getTabInfo(tabId);
+		// If URL changed reject running injections
 		if (tabInfo.url !== null && tabInfo.url !== url) {
 			Zotero.debug(`Connector_Browser: URL changed from ${tabInfo.url} to ${url}`);
 			if (tabInfo.injections) {
@@ -932,16 +941,21 @@ Zotero.Connector_Browser = new function() {
 				}
 			}
 		}
-		tabInfo = Zotero.Connector_Browser.getTabInfo(tabId, true);
+		// Reset tabInfo
+		tabInfo = Zotero.Connector_Browser.resetTabInfo(tabId);
 		tabInfo.url = url;
 	}
 
 	function _isDisabledForURL(url, excludeTests=false) {
-		const isHttpPage = url.startsWith('http://') || url.startsWith('https://');
+		const isFileURL = url.startsWith('file:');
 		const isExtensionPage = url.includes('-extension://');
+		const isHttpPage = url.startsWith('http://') || url.startsWith('https://');
 		const isZoteroExtensionPage = url.startsWith(browser.runtime.getURL(''));
 		const isZoteroTestPage = isZoteroExtensionPage && url.includes('/test/data/');
 		if (excludeTests && isZoteroTestPage) return false;
+		if (isFileURL) {
+			return Zotero.getString('extensionIsDisabled_fileURL', [ZOTERO_CONFIG.CLIENT_NAME])
+		}
 		if (isExtensionPage) {
 			return Zotero.getString('extensionIsDisabled_extensionPage', [ZOTERO_CONFIG.CLIENT_NAME])
 		}
@@ -1070,35 +1084,41 @@ Zotero.Connector_Browser = new function() {
 	}
 	
 	async function onNavigation(details, historyChange=false) {
-		let tabInfo = Zotero.Connector_Browser.getTabInfo(details.tabId);
-		
 		// Ignore developer tools, item selector
-		if (details.tabId <= 0 || _isDisabledForURL(details.url, true)
+		if (details.tabId <= 0
 			|| details.url.indexOf(browser.runtime.getURL("itemSelector/itemSelector.html")) === 0) return;
-			
+
+		let tabInfo = Zotero.Connector_Browser.getTabInfo(details.tabId);
+
 		// Ignore a history change that doesn't change URL (fired for all normal navigation)
 		if (historyChange && tabInfo.url == details.url) {
 			return;
 		}
 
-		if (details.frameId == 0) {
-			_updateInfoForTab(details.tabId, details.url);
+		let tab;
+		
+		// Only update button for disabled pages
+		if (_isDisabledForURL(details.url, true)) {
+			tab = await browser.tabs.get(details.tabId);
+			return Zotero.Connector_Browser._updateExtensionUI(tab);
 		}
 
-		if (details.frameId == 0) {
-			var tab = await browser.tabs.get(details.tabId);
-			Zotero.Connector_Browser._updateExtensionUI(tab);
-			Zotero.Connector.reportActiveURL(tab.url);
-		}
-		
-		// If you try to inject a frame here in Firefox it claims we don't have
+		// If you try to inject scripts into a frame here in Firefox it claims we don't have
 		// host permissions for the frame (false/bug), so we do it in onDOMContentLoaded
 		// (but it makes frame translator detection slower in Firefox)
 		if (!Zotero.isFirefox) {
 			if (!tab) tab = await browser.tabs.get(details.tabId);
 			await Zotero.Connector_Browser.onFrameLoaded(tab, details.frameId, details.url);
 		}
-		if (historyChange && details.frameId === 0) {
+		
+		if (details.frameId !== 0) return;
+		
+		_updateInfoForTab(details.tabId, details.url);
+		if (!tab) tab = await browser.tabs.get(details.tabId);
+		Zotero.Connector_Browser._updateExtensionUI(tab);
+		Zotero.Connector.reportActiveURL(tab.url);
+		
+		if (historyChange) {
 			Zotero.Messaging.sendMessage('historyChanged');
 		}
 	}

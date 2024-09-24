@@ -36,8 +36,10 @@ Zotero.SandboxedTranslateManager = {
 	},
 	
 	init: function () {
-		if (this.frame) {
-			throw new Error("Attempting to initialize a SandboxedTranslateManager when a translate frame already exists");
+		// If zoteroFrame._frame does not exist, it means something removed it from the DOM (like history navigation)
+		// so we need to reinsert and reinitialized it.
+		if (this.frame && !this.frame._frame) {
+			return;
 		}
 		this.frame = new ZoteroFrame(
 			{ src: browser.runtime.getURL('translateSandbox/translateSandbox.html') },
@@ -52,9 +54,7 @@ Zotero.SandboxedTranslateManager = {
 	
 	initVirtualTranslate: async function() {
 		let translateDoc;
-		if (!this.frame) {
-			this.init();
-		}
+		this.init();
 		await this.frame.initializedPromise;
 		this.frame.sendMessage('Translate.new');
 		this.virtualTranslate = {
@@ -75,11 +75,23 @@ Zotero.SandboxedTranslateManager = {
 			setDocument: (doc, updateLiveElements=false) => {
 				translateDoc = doc;
 				if (updateLiveElements) {
-					for (const checkbox of doc.querySelectorAll('input:checked')) {
-						checkbox.setAttribute('checked', '');
+					for (const checkbox of doc.querySelectorAll('input[type=checkbox]')) {
+						if (checkbox.checked) {
+							checkbox.setAttribute('checked', '');
+						}
+						else {
+							checkbox.removeAttribute('checked');
+						}
 					}
 				}
-				return this.frame.sendMessage('Translate.setDocument', [doc.documentElement.outerHTML, doc.location.href]);
+				return this.frame.sendMessage('Translate.setDocument', [doc.documentElement.outerHTML, doc.location.href, doc.cookie]);
+			},
+			setTranslator: async (translators) => {
+				if (!Array.isArray(translators)) {
+					translators = [translators];
+				}
+				translators = translators.map(t => t.serialize(Zotero.Translator.TRANSLATOR_PASSING_PROPERTIES));
+				return this.frame.sendMessage('Translate.setTranslator', [translators])
 			},
 			getTranslators: async (...args) => {
 				let translators = await this.frame.sendMessage('Translate.getTranslators', args);

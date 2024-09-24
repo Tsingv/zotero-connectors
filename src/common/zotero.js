@@ -157,7 +157,7 @@ var Zotero = global.Zotero = new function() {
 		// Botched dotsToHyphen pref migration to protocolless schemes in 5.0.32
 		if (Zotero.Utilities.semverCompare(lastVersion, "5.0.35") < 0) {
 			for (let proxy of Zotero.Proxies.proxies) {
-				if (proxy.scheme.indexOf('%h') == 0) {
+				if (proxy.scheme?.indexOf('%h') == 0) {
 					proxy.dotsToHyphens = true;
 				}
 			}
@@ -234,6 +234,9 @@ var Zotero = global.Zotero = new function() {
 		Zotero.initDeferred.resolve();
 		if (Zotero.GoogleDocs.API.init) {
 			await Zotero.GoogleDocs.API.init();
+		}
+		if (Zotero.isManifestV3) {
+			await Zotero.TranslateBlocklistManager.init();
 		}
 		Zotero.initialized = true;
 
@@ -371,12 +374,15 @@ Zotero.Prefs = new function() {
 		"connector.url": 'http://127.0.0.1:23119/',
 		"capitalizeTitles": false,
 		"interceptKnownFileTypes": true,
-		"allowedCSLExtensionHosts": ["raw.githubusercontent.com"],
+    "allowedCSLExtensionHosts": ["^https://raw\\.githubusercontent\\.com/", "^https://gitee\\.com/.+/raw/"],
 		"allowedInterceptHosts": [],
 		"firstUse": true,
 		"firstSaveToServer": true,
 		"reportTranslationFailure": true,
 		"translatorMetadata": [],
+		"translateBlocklist": ["^lastpass.com/vault", "^help.rootsmagic.com/"],
+		"translateBlocklist.url": "https://repo.zotero.org/translate_blocklist",
+		"translateBlocklist.lastCheck": 0,
 		
 		"proxies.transparent": true,
 		"proxies.autoRecognize": true,

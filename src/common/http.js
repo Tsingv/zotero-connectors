@@ -25,7 +25,10 @@
 
 const MAX_BACKOFF = 64e3;
 
-const HEADERS_SPECIAL_HANDLING = ['User-Agent', 'Referer'];
+let HEADERS_SPECIAL_HANDLING = ['User-Agent'];
+if (Zotero.isChromium) {
+	HEADERS_SPECIAL_HANDLING.push('Referer');
+}
 
 /**
  * Functions for performing HTTP requests, both via XMLHTTPRequest and using a hidden browser
@@ -208,14 +211,16 @@ Zotero.HTTP = new function() {
 			}
 		}	
 		
-		let replaceHeaders = HEADERS_SPECIAL_HANDLING.filter(header => !!options.headers[header])
-			.map(header => {
-				const val = { name: header, value: options.headers[header] }
-				delete options.headers['User-Agent'];
-				return val;
-			});
-		if (replaceHeaders.length) {
-			await Zotero.WebRequestIntercept.replaceHeaders(url, replaceHeaders);
+		if (Zotero.isBackground) {
+			let replaceHeaders = HEADERS_SPECIAL_HANDLING.filter(header => !!options.headers[header])
+				.map(header => {
+					const val = { name: header, value: options.headers[header] }
+					delete options.headers['User-Agent'];
+					return val;
+				});
+			if (replaceHeaders.length) {
+				await Zotero.WebRequestIntercept.replaceHeaders(url, replaceHeaders);
+			}
 		}
 		Zotero.debug(`HTTP ${method} ${url}${logBody}`);
 		
@@ -528,7 +533,7 @@ Zotero.HTTP = new function() {
 		var deferred = Zotero.Promise.defer();
 		xmlhttp.onload = () => deferred.resolve(xmlhttp);
 		xmlhttp.onerror = xmlhttp.onabort = function() {
-			var e = new Zotero.HTTP.StatusError(xmlhttp, url, typeof xmlhttp.responseText == 'string' ? xmlhttp.responseText : undefined);
+			var e = new Zotero.HTTP.StatusError(xmlhttp, url, ['', 'text'].includes(xmlhttp.responseType) ? xmlhttp.responseText : undefined);
 			if (options.successCodes === false) {
 				deferred.resolve(xmlhttp);
 			} else {

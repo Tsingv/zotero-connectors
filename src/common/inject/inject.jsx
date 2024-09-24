@@ -83,7 +83,7 @@ Zotero.Inject = new function() {
 			}
 			if(document.location == "about:blank") return;
 
-			if (!_translate) {
+			if (!_translate || force) {
 				_translate = await this.initTranslation(document);
 				_translate.setHandler("pageModified", function() {
 					Zotero.Connector_Browser.onPageLoad(document.location.href);
@@ -748,6 +748,19 @@ Zotero.Inject = new function() {
 			fn();
 		});
 	}
+	
+	this.isTranslateBlocklisted = function () {
+		if (!Zotero.isManifestV3) return false;
+		let blocklist = Zotero.Prefs.get('translateBlocklist');
+		for (let blockRe of blocklist) {
+			blockRe = new RegExp(blockRe);
+			if (blockRe.test(document.location.href.substring(document.location.protocol.length + 2))) {
+				Zotero.debug(`Translate on ${document.location.href} blocked by translate blocklist ${blockRe}`)
+				return true;
+			}
+		}
+		return false;
+	}
 };
 
 // check whether this is a hidden browser window being used for scraping
@@ -761,8 +774,18 @@ const isTestPage = Zotero.isBrowserExt && window.location.href.startsWith(browse
 // don't try to scrape on hidden frames
 if(!isHiddenIFrame) {
 	var doInject = async function () {
+		// Iframes where we inject translation can be non-text/html,
+		// and we shouldn't even bother translating them
+		// (and it also causes errors to be thrown when trying to create a ZoteroFrame)
+		// Update: Except for 'application/pdf', like on https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9919149
+		const shouldInjectFrame = ['text/html', 'application/pdf'].includes(document.contentType);
+		if (!isTopWindow && !shouldInjectFrame) return;
 		await Zotero.initInject();
-
+		
+		if (Zotero.Inject.isTranslateBlocklisted()) {
+			return;
+		}
+		
 		if (Zotero.isSafari && isTopWindow) {
 			Zotero.Connector_Browser.onPageLoad(document.location.href);
 		}
@@ -808,7 +831,7 @@ if(!isHiddenIFrame) {
 		if(document.readyState !== "complete") {
 			window.addEventListener("pageshow", function(e) {
 				if(e.target !== document) return;
-				Zotero.Inject.init(true);
+				Zotero.Inject.init(e.persisted);
 			}, false);
 		} else {	
 			Zotero.Inject.init();

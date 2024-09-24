@@ -58,6 +58,9 @@ Zotero.TranslateSandbox = {
 				});
 			}
 			observe(node, options) {
+				if (!(node instanceof Node)) {
+					throw new Error("TypeError: Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.")
+				}
 				const selector = Zotero.Utilities.Connector.getNodeSelector(node);
 				Zotero.TranslateSandbox.messaging.sendMessage('MutationObserver.observe', [selector, options])
 			}
@@ -99,22 +102,38 @@ Zotero.TranslateSandbox = {
 			return (await this.translate.getTranslators(...args))
 				.map(t => serializeTranslator(t, TRANSLATOR_PASSING_PROPERTIES));
 		});
+		this.messaging.addMessageListener(`Translate.setTranslator`, async ([translators]) => {
+			return await this.translate.setTranslator(translators.map(t => new Zotero.Translator(t)));
+		});
 		// Custom handler for setDocument()
-		this.messaging.addMessageListener(`Translate.setDocument`, ([html, url]) => {
+		this.messaging.addMessageListener(`Translate.setDocument`, ([html, url, cookie]) => {
 			let doc = new DOMParser().parseFromString(html, 'text/html');
-			let baseElem = doc.createElement('base');
-			baseElem.setAttribute('href', url);
+			let baseElem = doc.querySelector('base[href]');
+			let baseUrl = url;
+			if (baseElem) {
+				// If there's a base elem already on the page, we need to use
+				// that as a base instead of using page url, so we resolve it here
+				baseUrl = new URL(baseElem.getAttribute('href'), baseUrl).href;
+			}
+			else {
+				baseElem = doc.createElement('base');
+			}
+			baseElem.setAttribute('href', baseUrl);
 			doc.querySelector('head').appendChild(baseElem);
-			// Provide a MutationObserver for translate.monitorDOMChanges
-			doc = Zotero.HTTP.wrapDocument(doc, url, { defaultView: { MutationObserver: UnsandboxedMutationObserver } });
+			doc = Zotero.HTTP.wrapDocument(doc, url, {
+				// To support translate.monitorDOMChanges
+				defaultView: { MutationObserver: UnsandboxedMutationObserver },
+				// Some translators require it
+				cookie
+			});
 			this.translate.setDocument(doc);
 			// Won't respond the message and translate initialization will hang in the main content script
 			// if this is removed, so don't!
 			return true;
 		});
 
-		await this.messaging.sendMessage('frameReady');
 		await Zotero.initTranslateSandbox();
+		await this.messaging.sendMessage('frameReady');
 	},
 	
 	sendMessage: function() {
