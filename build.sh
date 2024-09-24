@@ -270,7 +270,7 @@ if [[ $BUILD_SAFARI == 1 ]]; then
 	#
 	# ImageMagick 7 changes how channels work, so the same command doesn't work properly. Until we
 	# figure out an equivalent command for ImageMagick 7, continue using version 6 from homebrew.
-	IMAGEMAGICK_CONVERT=/usr/local/opt/imagemagick@6/bin/convert
+	IMAGEMAGICK_CONVERT=/opt/homebrew/opt/imagemagick@6/bin/convert
 	rm -rf "$BUILD_DIR/safari/images"
 	mkdir "$BUILD_DIR/safari/images"
 	mkdir "$BUILD_DIR/safari/images/toolbar"
